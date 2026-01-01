@@ -1,0 +1,268 @@
+/* Zapret2 LuCI Styles */
+
+/* Status indicators */
+.zapret-status-running {
+    color: #3c763d;
+    background-color: #dff0d8;
+    border-color: #d6e9c6;
+    padding: 5px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    font-weight: bold;
+}
+
+.zapret-status-stopped {
+    color: #a94442;
+    background-color: #f2dede;
+    border-color: #ebccd1;
+    padding: 5px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    font-weight: bold;
+}
+
+.zapret-status-installed {
+    color: #31708f;
+    background-color: #d9edf7;
+    border-color: #bce8f1;
+    padding: 5px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    font-weight: bold;
+}
+
+/* Test results */
+.zapret-test-result {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 5px;
+    border-left: 5px solid;
+}
+
+.zapret-test-blocked {
+    border-left-color: #d9534f;
+    background-color: #fdf7f7;
+}
+
+.zapret-test-accessible {
+    border-left-color: #5cb85c;
+    background-color: #f9f9f9;
+}
+
+.zapret-test-error {
+    border-left-color: #f0ad4e;
+    background-color: #fcf8f2;
+}
+
+/* Progress bars */
+.zapret-progress {
+    height: 25px;
+    margin: 10px 0;
+    overflow: hidden;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.1);
+}
+
+.zapret-progress-bar {
+    float: left;
+    width: 0;
+    height: 100%;
+    font-size: 12px;
+    line-height: 25px;
+    color: #fff;
+    text-align: center;
+    background-color: #337ab7;
+    transition: width .6s ease;
+}
+
+.zapret-progress-bar-success {
+    background-color: #5cb85c;
+}
+
+.zapret-progress-bar-warning {
+    background-color: #f0ad4e;
+}
+
+.zapret-progress-bar-danger {
+    background-color: #d9534f;
+}
+
+/* Statistics */
+.zapret-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.zapret-stat-box {
+    flex: 1;
+    min-width: 150px;
+    padding: 15px;
+    background: #fff;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.zapret-stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.zapret-stat-label {
+    color: #666;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+/* Block lists */
+.zapret-list-item {
+    padding: 10px;
+    margin: 5px 0;
+    background: #f9f9f9;
+    border-left: 4px solid #337ab7;
+    border-radius: 3px;
+}
+
+.zapret-list-item-enabled {
+    border-left-color: #5cb85c;
+}
+
+.zapret-list-item-disabled {
+    border-left-color: #d9534f;
+    opacity: 0.7;
+}
+
+/* Log viewer */
+.zapret-log-viewer {
+    background: #000;
+    color: #0f0;
+    padding: 15px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    max-height: 500px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.zapret-log-line {
+    margin: 2px 0;
+}
+
+.zapret-log-error {
+    color: #f00;
+}
+
+.zapret-log-warning {
+    color: #ff0;
+}
+
+.zapret-log-info {
+    color: #0ff;
+}
+
+/* Installation wizard */
+.zapret-wizard-step {
+    padding: 20px;
+    margin: 20px 0;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.zapret-wizard-step-active {
+    border-color: #337ab7;
+    box-shadow: 0 0 10px rgba(51, 122, 183, 0.3);
+}
+
+.zapret-wizard-step-completed {
+    border-color: #5cb85c;
+    background-color: #f9fff9;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .zapret-stats {
+        flex-direction: column;
+    }
+    
+    .zapret-stat-box {
+        min-width: 100%;
+    }
+    
+    .table {
+        font-size: 12px;
+    }
+}
+
+/* Animations */
+@keyframes zapret-pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.zapret-pulse {
+    animation: zapret-pulse 2s infinite;
+}
+
+/* Button styles */
+.btn-zapret {
+    background: #337ab7;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.btn-zapret:hover {
+    background: #286090;
+}
+
+.btn-zapret-success {
+    background: #5cb85c;
+}
+
+.btn-zapret-success:hover {
+    background: #4cae4c;
+}
+
+.btn-zapret-danger {
+    background: #d9534f;
+}
+
+.btn-zapret-danger:hover {
+    background: #c9302c;
+}
+
+/* Icon sizes */
+.zapret-icon-large {
+    font-size: 48px;
+    color: #337ab7;
+    text-align: center;
+    display: block;
+    margin: 20px 0;
+}
+
+/* Loading spinner */
+.zapret-spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #337ab7;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
