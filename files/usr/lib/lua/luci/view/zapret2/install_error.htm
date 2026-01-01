@@ -1,0 +1,67 @@
+<%+header%>
+<div class="cbi-map">
+    <h2 name="content"><%:Installation Error%></h2>
+    
+    <div class="cbi-section">
+        <div class="cbi-section-node">
+            <div class="alert alert-danger">
+                <i class="icon icon-exclamation-sign"></i>
+                <strong><%:Error during installation%></strong><br>
+                <%=error%>
+            </div>
+            
+            <div class="cbi-value">
+                <h3><%:Possible Solutions%></h3>
+                <ul>
+                    <li><%:Check your internet connection%></li>
+                    <li><%:Ensure you have enough free disk space (at least 10MB free)%></li>
+                    <li><%:Try manual installation (see instructions below)%></li>
+                    <li><%:Check router compatibility%></li>
+                </ul>
+            </div>
+            
+            <div class="cbi-value">
+                <h3><%:Manual Installation%></h3>
+                <pre style="background: #f5f5f5; padding: 10px; border-radius: 3px; overflow: auto;">
+# For OpenWrt 22.03+
+opkg update
+opkg install curl wget tar jq
+
+# Determine your architecture
+ARCH=$(opkg print-architecture | awk 'NR>2 {print $2}' | head -1)
+echo "Architecture: $ARCH"
+
+# Map architecture to zapret naming
+case "$ARCH" in
+    "aarch64_generic") ARCH="aarch64" ;;
+    "arm_cortex-a7_neon-vfpv4") ARCH="arm_cortex-a7" ;;
+    "arm_cortex-a9_neon") ARCH="arm_cortex-a9" ;;
+    "mipsel_24kc") ARCH="mipsel" ;;
+    "x86_64") ARCH="x86_64" ;;
+    "i386_pentium4") ARCH="i386" ;;
+    *) ARCH="mipsel" ;;
+esac
+
+# Download and install
+wget "https://github.com/bol-van/zapret/releases/latest/download/zapret-openwrt-${ARCH}.tar.gz"
+tar -xzf "zapret-openwrt-${ARCH}.tar.gz"
+cd zapret
+chmod +x *.sh
+./install.sh
+                </pre>
+            </div>
+            
+            <div class="cbi-value cbi-value-last">
+                <div class="cbi-value-field" style="text-align: center;">
+                    <a href="<%=url("admin/services/zapret2/install")%>" class="btn btn-primary">
+                        <i class="icon icon-refresh"></i> <%:Try Again%>
+                    </a>
+                    <a href="<%=url("admin/services/zapret2/status")%>" class="btn">
+                        <i class="icon icon-home"></i> <%:Return to Status%>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<%+footer%>
