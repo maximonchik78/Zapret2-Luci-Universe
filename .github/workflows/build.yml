@@ -12,67 +12,67 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Download SDK (cached)
-      id: sdk
+    - name: Download SDK
       run: |
-        # Скачиваем один раз и кэшируем
-        if [ ! -f "sdk.tar.xz" ]; then
-          echo "📥 Downloading SDK..."
-          wget -q --show-progress -O sdk.tar.xz \
-            "https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-        fi
+        echo "📥 Downloading OpenWrt SDK..."
+        wget -q --show-progress -O sdk.tar.xz \
+          "https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
         
         mkdir -p sdk
         tar -xf sdk.tar.xz -C sdk --strip-components=1
-        echo "✅ SDK ready"
+        echo "SDK_PATH=$(pwd)/sdk" >> $GITHUB_ENV
     
-    - name: Copy package
+    - name: Prepare package in SDK
       run: |
-        # Копируем ТОЛЬКО нужные файлы
-        mkdir -p sdk/package/luci-app-zapret2
+        echo "📁 Preparing package structure..."
         
-        # Makefile ОБЯЗАТЕЛЕН
-        if [ ! -f "Makefile" ]; then
-          echo "❌ Makefile not found! Create it first!"
-          exit 1
-        fi
+        # Создаем директорию пакета
+        PACKAGE_DIR="${{ env.SDK_PATH }}/package/network/services/luci-app-zapret2"
+        mkdir -p $PACKAGE_DIR
         
-        cp Makefile sdk/package/luci-app-zapret2/
+        # Копируем ВСЕ файлы из репозитория
+        cp -r . $PACKAGE_DIR/
         
-        # Копируем files если есть
-        if [ -d "files" ]; then
-          cp -r files sdk/package/luci-app-zapret2/
-        fi
+        # Очищаем от ненужного
+        rm -rf $PACKAGE_DIR/.github $PACKAGE_DIR/.git 2>/dev/null || true
         
-        echo "📁 Package structure:"
-        ls -la sdk/package/luci-app-zapret2/
+        echo "✅ Package ready at: $PACKAGE_DIR"
     
-    - name: Build
+    - name: Build package
       run: |
-        cd sdk
+        cd "${{ env.SDK_PATH }}"
+        
+        echo "🔨 Starting build process..."
         
         # 1. Обновляем feeds
         ./scripts/feeds update -a
-        
-        # 2. Ставим luci
         ./scripts/feeds install luci
         
-        # 3. Конфигурируем (defconfig сам всё делает)
+        # 2. Конфигурация (defconfig сам определит архитектуру)
         make defconfig
         
-        # 4. Собираем ТОЛЬКО наш пакет
-        echo "🏗️ Building luci-app-zapret2..."
-        make package/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+        # 3. ЯВНО включаем наш пакет в сборку
+        echo "CONFIG_PACKAGE_luci-app-zapret2=y" >> .config
         
-        # 5. Проверяем
-        if find bin -name "luci-app-zapret2*.ipk" 2>/dev/null | head -1; then
-          echo "✅ Build SUCCESS!"
-          echo "IPK file:"
-          find bin -name "*.ipk" -type f | xargs ls -la
+        # 4. Собираем только наш пакет с подробным выводом
+        echo "🏗️ Building luci-app-zapret2..."
+        make package/network/services/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+        
+        # 5. Поиск собранного пакета
+        echo "🔍 Searching for built package..."
+        IPK_FILE=$(find bin -name "*luci-app-zapret2*.ipk" -type f 2>/dev/null | head -1)
+        
+        if [ -f "$IPK_FILE" ]; then
+          echo "✅ BUILD SUCCESSFUL!"
+          echo "📦 Package: $(basename $IPK_FILE)"
+          echo "📏 Size: $(du -h "$IPK_FILE" | cut -f1)"
+          echo "📍 Path: $IPK_FILE"
+          echo "SDK_IPK_PATH=$IPK_FILE" >> $GITHUB_ENV
         else
-          echo "❌ Build FAILED"
-          echo "Last errors:"
-          tail -100 build.log | grep -i "error\|fail" | head -20
+          echo "❌ BUILD FAILED - No IPK file found"
+          echo "=== Build log errors ==="
+          grep -i "error\|failed\|undefined" build.log | head -20
+          echo "=== Full log available in artifacts ==="
           exit 1
         fi
     
@@ -81,5 +81,11 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: luci-app-zapret2
-        path: sdk/bin/**/luci/luci-app-zapret2*.ipk
-        retention-days: 7
+        path: ${{ env.SDK_PATH }}/bin/packages/*/*/luci-app-zapret2*.ipk
+    
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: ${{ env.SDK_PATH }}/build.log
