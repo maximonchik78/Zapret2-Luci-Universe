@@ -1,0 +1,31 @@
+name: Test Workflow
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    
+    - name: Show success
+      run: |
+        echo "✅ GitHub Actions работает!"
+        echo "Репо: ${{ github.repository }}"
+        echo "Ветка: ${{ github.ref }}"
+    
+    - name: Create file
+      run: |
+        echo "Этот файл создан GitHub Actions" > test-file.txt
+        echo "Время: $(date)" >> test-file.txt
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-artifact
+        path: test-file.txt
