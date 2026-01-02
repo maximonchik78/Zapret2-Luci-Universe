@@ -1,0 +1,98 @@
+<%+header%>
+<script type="text/javascript">
+function enableStrategy(strategyId) {
+    if (confirm('Enable ' + strategyId + ' strategy? This may restart the service.')) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/services/zapret2/api")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        
+        xhr.onload = function() {
+            location.reload();
+        };
+        
+        xhr.send('cmd=enable_strategy&strategy=' + strategyId + '&token=<%=token%>');
+    }
+}
+
+function disableStrategy(strategyId) {
+    if (confirm('Disable ' + strategyId + ' strategy?')) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/services/zapret2/api")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        
+        xhr.onload = function() {
+            location.reload();
+        };
+        
+        xhr.send('cmd=disable_strategy&strategy=' + strategyId + '&token=<%=token%>');
+    }
+}
+</script>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Blocking Strategies%></h2>
+    <div class="cbi-map-descr">
+        <%:Configure different blocking strategies for zapret2. Each strategy has different performance characteristics and compatibility.%>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Available Strategies%></h3>
+        <div class="cbi-section-descr">
+            <%:Select and configure the blocking strategy that best fits your needs.%>
+        </div>
+        
+        <div class="cbi-section-node">
+            <% for _, strategy in ipairs(strategies) do %>
+            <div class="cbi-value">
+                <label class="cbi-value-title">
+                    <strong><%=strategy.name%></strong>
+                    <% if strategy.enabled then %>
+                    <span class="label label-success" style="margin-left: 10px;">Active</span>
+                    <% end %>
+                </label>
+                <div class="cbi-value-field">
+                    <p><%=strategy.description%></p>
+                    
+                    <div style="margin: 10px 0;">
+                        <strong><%:Features:%></strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <% if strategy.id == "tpws" then %>
+                            <li><%:Transparent HTTP/HTTPS proxy%></li>
+                            <li><%:WebSocket support%></li>
+                            <li><%:Low memory usage%></li>
+                            <% elseif strategy.id == "nfqws" then %>
+                            <li><%:NetFilter queue based%></li>
+                            <li><%:High performance%></li>
+                            <li><%:Supports all protocols%></li>
+                            <% elseif strategy.id == "custom" then %>
+                            <li><%:Custom scripts%></li>
+                            <li><%:Flexible configuration%></li>
+                            <li><%:Advanced features%></li>
+                            <% end %>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <% if strategy.enabled then %>
+                        <button class="btn btn-danger" onclick="disableStrategy('<%=strategy.id%>')">
+                            <i class="icon icon-ban-circle"></i> <%:Disable%>
+                        </button>
+                        <% else %>
+                        <button class="btn btn-success" onclick="enableStrategy('<%=strategy.id%>')">
+                            <i class="icon icon-check"></i> <%:Enable%>
+                        </button>
+                        <% end %>
+                        
+                        <% if fs.access(strategy.config_file) then %>
+                        <a href="<%=url("admin/services/zapret2/config")%>" class="btn">
+                            <i class="icon icon-cog"></i> <%:Configure%>
+                        </a>
+                        <% end %>
+                    </div>
+                </div>
+            </div>
+            <% end %>
+        </div>
+    </div>
+</div>
+<%+footer%>
