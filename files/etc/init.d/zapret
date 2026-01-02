@@ -41,7 +41,6 @@ reload() {
 }
 
 boot() {
-    # Check if service should start on boot
     local enabled
     config_load zapret2
     config_get_bool enabled config enabled 0
