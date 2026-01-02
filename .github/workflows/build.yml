@@ -1,9 +1,6 @@
-name: Build LuCI Package
+name: Build
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
@@ -14,78 +11,56 @@ jobs:
     
     - name: Download SDK
       run: |
-        echo "📥 Downloading OpenWrt SDK..."
+        echo "Скачиваю SDK..."
         wget -q --show-progress -O sdk.tar.xz \
           "https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-        
         mkdir -p sdk
         tar -xf sdk.tar.xz -C sdk --strip-components=1
-        echo "SDK_PATH=$(pwd)/sdk" >> $GITHUB_ENV
     
-    - name: Prepare package in SDK
+    - name: Copy package files
       run: |
-        echo "📁 Preparing package structure..."
+        echo "Копирую файлы..."
         
-        # Создаем директорию пакета
-        PACKAGE_DIR="${{ env.SDK_PATH }}/package/network/services/luci-app-zapret2"
-        mkdir -p $PACKAGE_DIR
+        # ПРАВИЛЬНОЕ КОПИРОВАНИЕ: Копируем СОДЕРЖИМОЕ текущей папки
+        mkdir -p sdk/package/luci-app-zapret2
         
-        # Копируем ВСЕ файлы из репозитория
-        cp -r . $PACKAGE_DIR/
+        # Копируем ВСЕ файлы из текущей директории
+        for item in *; do
+          [ "$item" = "sdk" ] && continue  # Пропускаем папку sdk
+          cp -r "$item" sdk/package/luci-app-zapret2/ 2>/dev/null || true
+        done
         
-        # Очищаем от ненужного
-        rm -rf $PACKAGE_DIR/.github $PACKAGE_DIR/.git 2>/dev/null || true
-        
-        echo "✅ Package ready at: $PACKAGE_DIR"
+        echo "Содержимое папки пакета:"
+        ls -la sdk/package/luci-app-zapret2/
     
     - name: Build package
       run: |
-        cd "${{ env.SDK_PATH }}"
+        cd sdk
         
-        echo "🔨 Starting build process..."
-        
-        # 1. Обновляем feeds
+        # Обновляем feeds
         ./scripts/feeds update -a
         ./scripts/feeds install luci
         
-        # 2. Конфигурация (defconfig сам определит архитектуру)
+        # Конфигурируем
         make defconfig
         
-        # 3. ЯВНО включаем наш пакет в сборку
+        # Включаем наш пакет
         echo "CONFIG_PACKAGE_luci-app-zapret2=y" >> .config
         
-        # 4. Собираем только наш пакет с подробным выводом
-        echo "🏗️ Building luci-app-zapret2..."
-        make package/network/services/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+        # Собираем
+        echo "Сборка luci-app-zapret2..."
+        make package/luci-app-zapret2/compile V=s
         
-        # 5. Поиск собранного пакета
-        echo "🔍 Searching for built package..."
-        IPK_FILE=$(find bin -name "*luci-app-zapret2*.ipk" -type f 2>/dev/null | head -1)
-        
-        if [ -f "$IPK_FILE" ]; then
-          echo "✅ BUILD SUCCESSFUL!"
-          echo "📦 Package: $(basename $IPK_FILE)"
-          echo "📏 Size: $(du -h "$IPK_FILE" | cut -f1)"
-          echo "📍 Path: $IPK_FILE"
-          echo "SDK_IPK_PATH=$IPK_FILE" >> $GITHUB_ENV
-        else
-          echo "❌ BUILD FAILED - No IPK file found"
-          echo "=== Build log errors ==="
-          grep -i "error\|failed\|undefined" build.log | head -20
-          echo "=== Full log available in artifacts ==="
-          exit 1
-        fi
+        # Ищем результат
+        echo "Ищу собранный пакет..."
+        find . -name "*luci-app-zapret2*.ipk" -type f 2>/dev/null | while read f; do
+          echo "✅ Найден: $f"
+          echo "Размер: $(du -h "$f" | cut -f1)"
+        done || echo "❌ Файлы не найдены"
     
     - name: Upload artifact
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: luci-app-zapret2
-        path: ${{ env.SDK_PATH }}/bin/packages/*/*/luci-app-zapret2*.ipk
-    
-    - name: Upload build log
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-log
-        path: ${{ env.SDK_PATH }}/build.log
+        path: sdk/bin/**/luci-app-zapret2*.ipk
