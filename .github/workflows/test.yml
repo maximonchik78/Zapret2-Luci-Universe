@@ -1,31 +1,77 @@
-name: Test Workflow
+name: Quick Test
 
 on:
   push:
-    branches: [main]
+    branches: [ main, master ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  test:
+  test-structure:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Show success
-      run: |
-        echo "✅ GitHub Actions работает!"
-        echo "Репо: ${{ github.repository }}"
-        echo "Ветка: ${{ github.ref }}"
-    
-    - name: Create file
-      run: |
-        echo "Этот файл создан GitHub Actions" > test-file.txt
-        echo "Время: $(date)" >> test-file.txt
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-artifact
-        path: test-file.txt
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate repository structure
+        run: |
+          echo "🔍 Checking repository structure..."
+          
+          # Required files
+          REQUIRED_FILES=("Makefile" "README.md" "files/usr/lib/lua/luci/controller/zapret2.lua")
+          
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ -f "$file" ] || [ -d "$file" ]; then
+              echo "✅ $file exists"
+            else
+              echo "❌ $file is missing"
+              exit 1
+            fi
+          done
+          
+          # Count files
+          echo ""
+          echo "📊 File statistics:"
+          echo "LuCI files: $(find files/usr/lib/lua/luci -type f 2>/dev/null | wc -l || echo 0)"
+          echo "HTML files: $(find files -name "*.htm" -o -name "*.html" 2>/dev/null | wc -l || echo 0)"
+          echo "Shell scripts: $(find files -name "*.sh" 2>/dev/null | wc -l || echo 0)"
+          
+          # Validate Makefile
+          echo ""
+          echo "📋 Makefile check:"
+          if grep -q "PKG_NAME.*luci-app-zapret2" Makefile; then
+            echo "✅ PKG_NAME is correct"
+          else
+            echo "❌ PKG_NAME is incorrect"
+          fi
+          
+          if grep -q "LUCI_TITLE.*Zapret2" Makefile; then
+            echo "✅ LUCI_TITLE is set"
+          else
+            echo "⚠️ LUCI_TITLE might be missing"
+          fi
+
+      - name: Create test package info
+        run: |
+          mkdir -p test-output
+          cat > test-output/package.info << 'EOF'
+Package: luci-app-zapret2
+Version: 2.0.0-test
+Architecture: all
+Description: Test package info for validation
+Maintainer: maximonchik78
+Depends: luci-compat, luci-lib-ipkg
+Status: test-ready
+Build-System: GitHub Actions
+Timestamp: $(date -u)
+EOF
+          
+          echo "📦 Test package info created"
+          cat test-output/package.info
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-validation
+          path: test-output/
+          retention-days: 7
