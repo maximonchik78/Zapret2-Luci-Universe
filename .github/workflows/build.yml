@@ -1,0 +1,176 @@
+name: Build LuCI Package for OpenWrt
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: 'Target architecture'
+        required: true
+        default: 'x86_64'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+
+env:
+  OPENWRT_VERSION: "23.05.3"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: openwrtorg/sdk:x86_64-23.05.3
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SDK environment
+        run: |
+          echo "🎯 Building in OpenWrt SDK container"
+          echo "📦 SDK version: ${{ env.OPENWRT_VERSION }}"
+          
+          # Проверяем рабочую директорию
+          echo "Working directory: $(pwd)"
+          ls -la
+
+      - name: Prepare package
+        run: |
+          echo "📁 Preparing package..."
+          
+          # Создаем директорию пакета в SDK
+          PACKAGE_DIR="package/luci-app-zapret2"
+          mkdir -p $PACKAGE_DIR
+          
+          # Копируем необходимые файлы
+          echo "Copying Makefile..."
+          if [ -f "Makefile" ]; then
+            cp Makefile $PACKAGE_DIR/
+            echo "✅ Makefile copied"
+          else
+            echo "❌ Makefile not found in repository"
+            exit 1
+          fi
+          
+          # Копируем директорию files если она существует
+          if [ -d "files" ]; then
+            echo "Copying files directory..."
+            cp -r files $PACKAGE_DIR/
+            echo "✅ files directory copied"
+          else
+            echo "⚠️  files directory not found"
+          fi
+          
+          # Копируем README.md если существует
+          if [ -f "README.md" ]; then
+            cp README.md $PACKAGE_DIR/
+          fi
+          
+          echo "✅ Package prepared"
+          ls -la $PACKAGE_DIR/
+
+      - name: Build the package
+        run: |
+          echo "🔨 Building package..."
+          
+          # Обновляем feeds
+          echo "📡 Updating feeds..."
+          ./scripts/feeds update -a
+          
+          # Устанавливаем luci feed
+          echo "📥 Installing luci feed..."
+          ./scripts/feeds install luci
+          
+          # Настраиваем конфигурацию
+          echo "⚙️ Configuring build system..."
+          
+          # Создаем минимальную конфигурацию для LuCI
+          cat > .config << 'EOF'
+          CONFIG_TARGET_x86=y
+          CONFIG_TARGET_x86_64=y
+          CONFIG_TARGET_x86_64_DEVICE_generic=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_LUCI_LANG_ru=y
+          CONFIG_LUCI_LANG_en=y
+          EOF
+          
+          # Выполняем defconfig
+          make defconfig
+          
+          # Собираем только наш пакет
+          echo "🏗️ Building luci-app-zapret2..."
+          
+          # Собираем с записью лога
+          make package/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+          
+          # Проверяем результат
+          echo "🔍 Checking build results..."
+          if find bin -name "luci-app-zapret2*.ipk" 2>/dev/null | grep -q .; then
+            echo "✅ Build successful!"
+            echo "📦 Generated packages:"
+            find bin -name "luci-app-zapret2*.ipk" | while read ipk; do
+              SIZE=$(du -h "$ipk" 2>/dev/null | cut -f1 || echo "unknown")
+              echo "  - $ipk ($SIZE)"
+            done
+          else
+            echo "❌ Build failed - no .ipk files generated"
+            echo "=== Searching for any build artifacts ==="
+            find bin -type f 2>/dev/null | head -20 || echo "No files in bin directory"
+            
+            echo "=== Last 100 lines of build log ==="
+            tail -100 build.log
+            
+            echo "=== Looking for errors in build log ==="
+            grep -i "error\|failed\|undefined\|No rule to make target" build.log | head -50
+            
+            exit 1
+          fi
+
+      - name: Upload built package
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-zapret2
+          path: bin/**/luci-app-zapret2*.ipk
+          retention-days: 7
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build.log
+          retention-days: 7
+
+  summary:
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: artifacts
+
+      - name: Show build summary
+        run: |
+          echo "=== Build Summary ==="
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          
+          echo "Build result: ${{ needs.build.result }}"
+          
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "🎉 Build completed successfully!"
+            echo ""
+            echo "📦 Package is available in the 'Artifacts' section above."
+          else
+            echo "❌ Build failed"
+            echo ""
+            echo "🔧 Check build logs in artifacts for details"
+          fi
