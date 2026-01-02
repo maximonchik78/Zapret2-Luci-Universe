@@ -1,0 +1,154 @@
+<%+header%>
+<script type="text/javascript">
+function updateStatus() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<%=url("admin/services/zapret2/api")%>?cmd=status&token=<%=token%>', true);
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText);
+            var statusElement = document.getElementById('service-status');
+            var actionElement = document.getElementById('service-action');
+            
+            if (response.running) {
+                statusElement.innerHTML = '<span class="label label-success">RUNNING</span>';
+                actionElement.innerHTML = '<a href="<%=url("admin/services/zapret2/control")%>?action=stop" class="btn btn-danger" style="min-width: 100px;">Stop</a>' +
+                                         '<a href="<%=url("admin/services/zapret2/control")%>?action=restart" class="btn btn-warning" style="min-width: 100px; margin-left: 10px;">Restart</a>';
+            } else {
+                statusElement.innerHTML = '<span class="label label-danger">STOPPED</span>';
+                actionElement.innerHTML = '<a href="<%=url("admin/services/zapret2/control")%>?action=start" class="btn btn-success" style="min-width: 100px;">Start</a>';
+            }
+        }
+    };
+    
+    xhr.send();
+}
+
+setInterval(updateStatus, 5000);
+</script>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Zapret2 Status%></h2>
+    <div class="cbi-map-descr">
+        <%:Overview of zapret2 blocking system status and statistics.%>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Service Status%></h3>
+        <div class="cbi-section-node">
+            <div class="table" style="width:100%">
+                <div class="tr">
+                    <div class="td" style="width:30%"><strong><%:Installation Status%></strong></div>
+                    <div class="td">
+                        <% if is_installed then %>
+                            <span class="label label-success">Installed</span>
+                        <% else %>
+                            <span class="label label-danger">Not Installed</span>
+                        <% end %>
+                    </div>
+                </div>
+                
+                <div class="tr">
+                    <div class="td"><strong><%:Service Status%></strong></div>
+                    <div class="td">
+                        <span id="service-status">
+                            <% if is_running then %>
+                                <span class="label label-success">RUNNING</span>
+                            <% else %>
+                                <span class="label label-danger">STOPPED</span>
+                            <% end %>
+                        </span>
+                        <% if is_enabled then %>
+                            <span class="label label-primary" style="margin-left: 10px;">Autostart Enabled</span>
+                        <% else %>
+                            <span class="label label-default" style="margin-left: 10px;">Autostart Disabled</span>
+                        <% end %>
+                    </div>
+                </div>
+                
+                <div class="tr">
+                    <div class="td"><strong><%:Version%></strong></div>
+                    <div class="td"><%=version%></div>
+                </div>
+                
+                <div class="tr">
+                    <div class="td"><strong><%:Actions%></strong></div>
+                    <div class="td" id="service-action">
+                        <% if is_running then %>
+                            <a href="<%=url("admin/services/zapret2/control")%>?action=stop" class="btn btn-danger" style="min-width: 100px;">Stop</a>
+                            <a href="<%=url("admin/services/zapret2/control")%>?action=restart" class="btn btn-warning" style="min-width: 100px; margin-left: 10px;">Restart</a>
+                        <% else %>
+                            <a href="<%=url("admin/services/zapret2/control")%>?action=start" class="btn btn-success" style="min-width: 100px;">Start</a>
+                        <% end %>
+                        
+                        <% if is_enabled then %>
+                            <a href="<%=url("admin/services/zapret2/control")%>?action=disable" class="btn btn-default" style="min-width: 150px; margin-left: 10px;">Disable Autostart</a>
+                        <% else %>
+                            <a href="<%=url("admin/services/zapret2/control")%>?action=enable" class="btn btn-primary" style="min-width: 150px; margin-left: 10px;">Enable Autostart</a>
+                        <% end %>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Quick Actions%></h3>
+        <div class="cbi-section-descr">
+            <%:Common operations for managing zapret2.%>
+        </div>
+        
+        <div class="cbi-section-node">
+            <div class="btn-group" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <a class="btn" href="<%=url("admin/services/zapret2/install")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-download"></i> <%:Install/Update%>
+                </a>
+                
+                <a class="btn" href="<%=url("admin/services/zapret2/blockcheck")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-check"></i> <%:Block Check%>
+                </a>
+                
+                <a class="btn" href="<%=url("admin/services/zapret2/config")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-cog"></i> <%:Configuration%>
+                </a>
+                
+                <a class="btn" href="<%=url("admin/services/zapret2/strategies")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-shield"></i> <%:Strategies%>
+                </a>
+                
+                <a class="btn" href="<%=url("admin/services/zapret2/lists")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-list"></i> <%:Block Lists%>
+                </a>
+                
+                <a class="btn" href="<%=url("admin/services/zapret2/exceptions")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-star"></i> <%:Exceptions%>
+                </a>
+                
+                <a class="btn" href="<%=url("admin/services/zapret2/log")%>" style="flex: 1; min-width: 150px;">
+                    <i class="icon icon-file-text"></i> <%:View Log%>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.btn {
+    min-width: 150px !important;
+    text-align: center;
+    padding: 10px 15px;
+    margin: 5px;
+}
+
+.cbi-button {
+    min-width: 100px !important;
+}
+
+.label {
+    min-width: 80px;
+    display: inline-block;
+    text-align: center;
+    padding: 5px 10px;
+}
+</style>
+<%+footer%>
