@@ -1,0 +1,155 @@
+<%+header%>
+<script type="text/javascript">
+function refreshLog() {
+    var lines = document.getElementById('lines').value;
+    var filter = document.getElementById('filter').value;
+    
+    var url = '<%=url("admin/services/zapret2/log")%>?lines=' + lines;
+    if (filter) {
+        url += '&filter=' + encodeURIComponent(filter);
+    }
+    
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(xhr.responseText, 'text/html');
+            var logContent = doc.querySelector('pre');
+            
+            if (logContent) {
+                document.getElementById('log-content').innerHTML = logContent.textContent;
+                document.getElementById('log-content').scrollTop = document.getElementById('log-content').scrollHeight;
+            }
+        }
+    };
+    
+    xhr.send();
+}
+
+function clearLog() {
+    if (confirm('Clear log file? This cannot be undone.')) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/services/zapret2/api")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        
+        xhr.onload = function() {
+            refreshLog();
+        };
+        
+        xhr.send('cmd=clear_log&token=<%=token%>');
+    }
+}
+
+setInterval(refreshLog, 10000);
+</script>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Zapret2 Log%></h2>
+    <div class="cbi-map-descr">
+        <%:View system logs for zapret2. Useful for debugging and monitoring.%>
+    </div>
+    
+    <div class="cbi-section">
+        <div class="cbi-section-node">
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Log Controls%></label>
+                <div class="cbi-value-field">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div>
+                            <label><%:Lines:%></label>
+                            <select id="lines" class="cbi-input-select" style="width: 80px;">
+                                <option value="50" <%=lines==50 and "selected" or ""%>>50</option>
+                                <option value="100" <%=lines==100 and "selected" or ""%>>100</option>
+                                <option value="200" <%=lines==200 and "selected" or ""%>>200</option>
+                                <option value="500" <%=lines==500 and "selected" or ""%>>500</option>
+                                <option value="1000" <%=lines==1000 and "selected" or ""%>>1000</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label><%:Filter:%></label>
+                            <input type="text" id="filter" class="cbi-input-text" 
+                                   value="<%=filter%>" placeholder="Enter filter text" style="width: 200px;">
+                        </div>
+                        
+                        <div>
+                            <button onclick="refreshLog()" class="btn">
+                                <i class="icon icon-refresh"></i> <%:Refresh%>
+                            </button>
+                            <button onclick="clearLog()" class="btn btn-danger">
+                                <i class="icon icon-trash"></i> <%:Clear%>
+                            </button>
+                        </div>
+                        
+                        <div style="margin-left: auto;">
+                            <span class="label label-info">
+                                <i class="icon icon-time"></i>
+                                <%:Auto-refresh: 10s%>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Log Content%></label>
+                <div class="cbi-value-field">
+                    <pre id="log-content" style="background: #000; color: #fff; padding: 15px; 
+                         min-height: 500px; max-height: 600px; overflow: auto; font-family: monospace; 
+                         font-size: 12px; line-height: 1.4;">
+<%=log_content%>
+                    </pre>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Quick Filters%></label>
+                <div class="cbi-value-field">
+                    <div class="btn-group">
+                        <button onclick="document.getElementById('filter').value='error'; refreshLog();" 
+                                class="btn btn-mini btn-danger">
+                            <i class="icon icon-exclamation-sign"></i> Errors
+                        </button>
+                        <button onclick="document.getElementById('filter').value='block'; refreshLog();" 
+                                class="btn btn-mini btn-warning">
+                            <i class="icon icon-ban-circle"></i> Blocks
+                        </button>
+                        <button onclick="document.getElementById('filter').value='warning'; refreshLog();" 
+                                class="btn btn-mini">
+                            <i class="icon icon-warning-sign"></i> Warnings
+                        </button>
+                        <button onclick="document.getElementById('filter').value='install'; refreshLog();" 
+                                class="btn btn-mini btn-success">
+                            <i class="icon icon-download"></i> Installation
+                        </button>
+                        <button onclick="document.getElementById('filter').value=''; refreshLog();" 
+                                class="btn btn-mini">
+                            <i class="icon icon-remove"></i> Clear Filter
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.btn-mini {
+    padding: 2px 8px !important;
+    font-size: 11px !important;
+    min-width: 0 !important;
+}
+
+.btn-group .btn {
+    margin-right: 5px;
+    margin-bottom: 5px;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+</style>
+<%+footer%>
