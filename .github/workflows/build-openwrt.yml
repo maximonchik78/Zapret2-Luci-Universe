@@ -5,12 +5,11 @@ on:
     tags:
       - 'v*'
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 env:
   PACKAGE_NAME: luci-app-zapret2
-  SDK_VERSION: 22.03.5
 
 jobs:
   build:
@@ -18,65 +17,59 @@ jobs:
     
     strategy:
       matrix:
-        target: [x86_64, aarch64_generic, mipsel_24kc]
+        target: [x86_64, aarch64_generic, mipsel_24kc, arm_cortex-a7, arm_cortex-a9]
         include:
           - target: x86_64
             sdk_url: https://downloads.openwrt.org/releases/22.03.5/targets/x86/64/openwrt-sdk-22.03.5-x86-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz
           - target: aarch64_generic
             sdk_url: https://downloads.openwrt.org/releases/22.03.5/targets/armvirt/64/openwrt-sdk-22.03.5-armvirt-64_gcc-11.2.0_musl.Linux-x86_64.tar.xz
           - target: mipsel_24kc
-            sdk_url: https://downloads.openwrt.org/releases/22.03.5/targets/ath79/mikrotik/openwrt-sdk-22.03.5-ath79-mikrotik_gcc-11.2.0_musl.Linux-x86_64.tar.xz
-    
+            sdk_url: https://downloads.openwrt.org/releases/22.03.5/targets/ramips/mt7621/openwrt-sdk-22.03.5-ramips-mt7621_gcc-11.2.0_musl.Linux-x86_64.tar.xz
+          - target: arm_cortex-a7
+            sdk_url: https://downloads.openwrt.org/releases/22.03.5/targets/sunxi/cortexa7/openwrt-sdk-22.03.5-sunxi-cortexa7_gcc-11.2.0_musl.Linux-x86_64.tar.xz
+          - target: arm_cortex-a9
+            sdk_url: https://downloads.openwrt.org/releases/22.03.5/targets/ipq40xx/generic/openwrt-sdk-22.03.5-ipq40xx_gcc-11.2.0_musl.Linux-x86_64.tar.xz
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
-      with:
-        submodules: recursive
-    
-    - name: Set up build environment
+
+    - name: Setup build environment
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential ccache ecj fastjar file g++ gawk \
           gettext git java-propose-classpath libelf-dev libncurses5-dev \
           libncursesw5-dev libssl-dev python3 python3-distutils python3-setuptools \
           python3-pip rsync subversion swig time xsltproc zlib1g-dev
-    
+
     - name: Download OpenWrt SDK
       run: |
         wget ${{ matrix.sdk_url }} -O sdk.tar.xz
         tar -xf sdk.tar.xz
         SDK_DIR=$(tar -tf sdk.tar.xz | head -1 | cut -f1 -d"/")
         echo "SDK_DIR=$SDK_DIR" >> $GITHUB_ENV
-        echo "OPENWRT_SDK=$PWD/$SDK_DIR" >> $GITHUB_ENV
-    
+
     - name: Prepare package
       run: |
-        # Copy package to SDK
-        mkdir -p $OPENWRT_SDK/package/luci-app-zapret2
-        cp -r . $OPENWRT_SDK/package/luci-app-zapret2/
+        # Create package directory
+        mkdir -p $SDK_DIR/package/${{ env.PACKAGE_NAME }}
+        cp -r . $SDK_DIR/package/${{ env.PACKAGE_NAME }}/
         
-        # Create feeds structure
-        mkdir -p $OPENWRT_SDK/feeds/luci/applications/
-        ln -sf $OPENWRT_SDK/package/luci-app-zapret2 $OPENWRT_SDK/feeds/luci/applications/luci-app-zapret2
+        # Create feeds.conf
+        cd $SDK_DIR
+        echo "src-link ${{ env.PACKAGE_NAME }} $SDK_DIR/package/${{ env.PACKAGE_NAME }}" > feeds.conf
         
         # Update feeds
-        cd $OPENWRT_SDK
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
-    
+        ./scripts/feeds update ${{ env.PACKAGE_NAME }}
+        ./scripts/feeds install -p ${{ env.PACKAGE_NAME }} ${{ env.PACKAGE_NAME }}
+
     - name: Configure and build
       run: |
-        cd $OPENWRT_SDK
-        cp feeds.conf.default feeds.conf
-        echo "src-link luci_app_zapret2 $OPENWRT_SDK/package/luci-app-zapret2" >> feeds.conf
-        
-        # Update and install feeds
-        ./scripts/feeds update luci_app_zapret2
-        ./scripts/feeds install -p luci_app_zapret2 luci-app-zapret2
-        
-        # Configure
+        cd $SDK_DIR
         make defconfig
-        echo "CONFIG_PACKAGE_luci-app-zapret2=y" >> .config
+        
+        # Enable our package and dependencies
+        echo "CONFIG_PACKAGE_${{ env.PACKAGE_NAME }}=y" >> .config
         echo "CONFIG_PACKAGE_luci-compat=y" >> .config
         echo "CONFIG_PACKAGE_luci-lib-ipkg=y" >> .config
         echo "CONFIG_PACKAGE_curl=y" >> .config
@@ -85,24 +78,24 @@ jobs:
         echo "CONFIG_PACKAGE_jq=y" >> .config
         
         make defconfig
-        make package/luci-app-zapret2/compile V=s
-    
+        make package/${{ env.PACKAGE_NAME }}/compile V=s
+
     - name: Collect artifacts
       run: |
         mkdir -p $GITHUB_WORKSPACE/artifacts/${{ matrix.target }}
-        cp $OPENWRT_SDK/bin/packages/*/luci/luci-app-zapret2*.ipk $GITHUB_WORKSPACE/artifacts/${{ matrix.target }}/
+        find $SDK_DIR/bin -name "*${{ env.PACKAGE_NAME }}*.ipk" -exec cp {} $GITHUB_WORKSPACE/artifacts/${{ matrix.target }} \;
         
         # Create index
         cd $GITHUB_WORKSPACE/artifacts/${{ matrix.target }}
         ls -la > index.txt
-    
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: luci-app-zapret2-${{ matrix.target }}
+        name: ${{ env.PACKAGE_NAME }}-${{ matrix.target }}
         path: artifacts/${{ matrix.target }}/
         retention-days: 30
-    
+
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
