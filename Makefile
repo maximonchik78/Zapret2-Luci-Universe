@@ -10,7 +10,7 @@ PKG_LICENSE_FILES:=LICENSE
 
 LUCI_TITLE:=Zapret2 Web Interface with Block Check
 LUCI_DESCRIPTION:=Complete web interface for zapret2 blocking system with installation, configuration, block lists management, and block testing features.
-LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +curl +wget +tar +jq +zapret
+LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +curl +wget +tar +jq
 LUCI_PKGARCH:=all
 
 include ../../luci.mk
