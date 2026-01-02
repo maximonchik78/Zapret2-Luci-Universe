@@ -16,7 +16,6 @@ on:
 
 env:
   OPENWRT_VERSION: "23.05.3"
-  CACHE_KEY: "openwrt-sdk-${{ github.event_name == 'push' && 'prod' || 'dev' }}"
 
 jobs:
   setup-sdk:
@@ -55,9 +54,16 @@ jobs:
               fi
               JSON="$JSON\"$arch\":\"${SDK_URLS[$arch]}\""
               first=false
+            else
+              echo "⚠️ Warning: No SDK URL for architecture $arch" >&2
             fi
           done
           JSON="$JSON}"
+          
+          if [ "$JSON" = "{}" ]; then
+            echo "❌ No valid architectures specified"
+            exit 1
+          fi
           
           echo "SDK_URLS=$JSON" >> $GITHUB_OUTPUT
           echo "Architectures to build: $ARCHS"
@@ -72,117 +78,166 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache OpenWrt SDK
-        uses: actions/cache@v3
-        with:
-          path: sdk-${{ matrix.arch }}
-          key: ${{ env.CACHE_KEY }}-${{ matrix.arch }}-${{ hashFiles('Makefile', 'files/**', '.github/workflows/build.yml') }}
-
-      - name: Download and extract OpenWrt SDK
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Show environment info
         run: |
-          echo "Downloading SDK for ${{ matrix.arch }}..."
+          echo "🔄 Build started for ${{ matrix.arch.key }}"
+          echo "SDK URL: ${{ matrix.arch.value }}"
+          echo "Working directory: $(pwd)"
+          ls -la
+
+      - name: Download OpenWrt SDK
+        run: |
+          echo "📥 Downloading SDK for ${{ matrix.arch.key }}..."
           SDK_URL='${{ matrix.arch.value }}'
           
-          # Download SDK
-          wget -q --show-progress -O sdk.tar.xz "$SDK_URL"
+          # Create directory
+          mkdir -p sdk-${{ matrix.arch.key }}
+          
+          # Download with retry
+          for i in {1..3}; do
+            echo "Attempt $i to download SDK..."
+            if wget -q --show-progress -O sdk.tar.xz "$SDK_URL"; then
+              echo "✅ Download successful"
+              break
+            elif [ $i -eq 3 ]; then
+              echo "❌ Failed to download SDK after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
           
           # Extract
-          mkdir -p sdk-${{ matrix.arch.key }}
-          tar -xf sdk.tar.xz -C sdk-${{ matrix.arch.key }} --strip-components=1
-          
-          # Verify extraction
-          if [ -f "sdk-${{ matrix.arch.key }}/Makefile" ]; then
-            echo "✅ SDK extracted successfully"
+          echo "📦 Extracting SDK..."
+          if tar -xf sdk.tar.xz -C sdk-${{ matrix.arch.key }} --strip-components=1; then
+            echo "✅ Extraction successful"
           else
-            echo "❌ SDK extraction failed"
-            ls -la sdk-${{ matrix.arch.key }}/
+            echo "❌ Failed to extract SDK"
+            exit 1
+          fi
+          
+          # Verify
+          SDK_DIR="sdk-${{ matrix.arch.key }}"
+          if [ -f "$SDK_DIR/Makefile" ] && [ -d "$SDK_DIR/package" ]; then
+            echo "✅ SDK verified:"
+            ls -la "$SDK_DIR/"
+          else
+            echo "❌ SDK verification failed"
+            ls -la "$SDK_DIR/"
             exit 1
           fi
 
-      - name: Prepare package in SDK tree
+      - name: Prepare package
         run: |
           SDK_DIR="sdk-${{ matrix.arch.key }}"
           
-          # Copy entire package to SDK
+          # Check package structure
+          echo "📁 Checking package structure..."
+          if [ -f "Makefile" ]; then
+            echo "✅ Makefile found"
+            head -20 Makefile
+          else
+            echo "❌ Makefile not found"
+            exit 1
+          fi
+          
+          # Copy package to SDK
+          echo "📋 Copying package to SDK tree..."
           mkdir -p "$SDK_DIR/package/luci-app-zapret2"
-          cp -r * "$SDK_DIR/package/luci-app-zapret2/"
+          cp -r Makefile files "$SDK_DIR/package/luci-app-zapret2/" 2>/dev/null || true
           
-          # Clean up any unwanted files
-          rm -f "$SDK_DIR/package/luci-app-zapret2/.github" 2>/dev/null || true
-          rm -rf "$SDK_DIR/package/luci-app-zapret2/.git" 2>/dev/null || true
+          # Copy any other necessary files
+          for file in README.md LICENSE; do
+            if [ -f "$file" ]; then
+              cp "$file" "$SDK_DIR/package/luci-app-zapret2/" 2>/dev/null || true
+            fi
+          done
           
-          echo "Package prepared in SDK tree"
+          echo "✅ Package prepared in $SDK_DIR/package/luci-app-zapret2/"
           ls -la "$SDK_DIR/package/luci-app-zapret2/"
 
-      - name: Build the package
+      - name: Build package
         run: |
           SDK_DIR="sdk-${{ matrix.arch.key }}"
           cd "$SDK_DIR"
           
-          # Update feeds and configure
+          echo "🔨 Starting build process..."
+          
+          # Update feeds
+          echo "📡 Updating feeds..."
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
           
-          echo "Starting build for luci-app-zapret2..."
-          make defconfig
+          # Install luci feed
+          ./scripts/feeds install luci
           
-          # Build only our package with verbose output
-          make package/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+          # Configure
+          echo "⚙️ Configuring build..."
+          make defconfig 2>&1 | tee config.log || echo "⚠️ defconfig may have warnings"
           
-          # Check if build was successful
-          if ls bin/packages/*/luci/luci-app-zapret2*.ipk 1> /dev/null 2>&1; then
-            echo "✅ Build successful!"
+          # Build package
+          echo "🏗️ Building luci-app-zapret2..."
+          
+          # Build with error capture
+          set +e
+          make package/luci-app-zapret2/compile V=sc 2>&1 | tee build.log
+          BUILD_EXIT_CODE=$?
+          set -e
+          
+          # Check results
+          echo "📊 Build completed with exit code: $BUILD_EXIT_CODE"
+          
+          if [ $BUILD_EXIT_CODE -eq 0 ]; then
+            # Look for IPK files
+            IPK_FILES=$(find bin/packages -name "luci-app-zapret2*.ipk" 2>/dev/null || true)
             
-            # Show package info
-            for ipk in bin/packages/*/luci/luci-app-zapret2*.ipk; do
-              echo "Generated package: $ipk"
-              echo "Size: $(du -h "$ipk" | cut -f1)"
-            done
+            if [ -n "$IPK_FILES" ]; then
+              echo "✅ Build successful! Found IPK files:"
+              echo "$IPK_FILES" | while read ipk; do
+                echo "   - $ipk ($(du -h "$ipk" | cut -f1))"
+              done
+            else
+              echo "⚠️ Build succeeded but no IPK files found"
+              echo "Searching for any generated files..."
+              find bin -type f -name "*.ipk" 2>/dev/null || echo "No IPK files found"
+              exit 1
+            fi
           else
-            echo "❌ Build failed - no .ipk files found"
+            echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
             
-            # Show last 50 lines of build log for debugging
-            echo "=== Last 50 lines of build log ==="
-            tail -50 build.log
+            # Show errors from log
+            echo "=== Last 20 lines of build log ==="
+            tail -20 build.log
             
-            # Check for common issues
+            # Check for common errors
             if grep -q "ERROR:" build.log; then
               echo "=== Errors found ==="
-              grep -A5 -B5 "ERROR:" build.log
+              grep -B2 -A2 "ERROR:" build.log | head -50
             fi
             
             exit 1
           fi
 
-      - name: Upload built packages
+      - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: luci-app-zapret2-${{ matrix.arch.key }}
           path: |
             sdk-${{ matrix.arch.key }}/bin/packages/*/luci/luci-app-zapret2*.ipk
             sdk-${{ matrix.arch.key }}/build.log
-          retention-days: 30
-
-      - name: Create GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            sdk-${{ matrix.arch.key }}/bin/packages/*/luci/luci-app-zapret2*.ipk
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+          if-no-files-found: error
+          retention-days: 7
 
   summary:
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [setup-sdk, build]
     if: always()
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           path: artifacts
+          if-no-files-found: warn
 
       - name: Show build summary
         run: |
@@ -190,16 +245,47 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "Ref: ${{ github.ref }}"
           echo "Commit: ${{ github.sha }}"
+          echo "Workflow: ${{ github.workflow }}"
           echo ""
-          echo "Built packages:"
-          find artifacts -name "*.ipk" -type f | while read ipk; do
-            echo "  - $(basename $(dirname $(dirname $ipk)))/$(basename $ipk)"
-            echo "    Size: $(du -h "$ipk" | cut -f1)"
-          done
           
-          if [ "${{ needs.build.result }}" = "success" ]; then
-            echo "✅ All builds completed successfully!"
+          echo "📊 Job Results:"
+          echo "  • setup-sdk: ${{ needs.setup-sdk.result }}"
+          echo "  • build: ${{ needs.build.result }}"
+          echo ""
+          
+          # Check for artifacts
+          if [ -d "artifacts" ] && [ -n "$(ls -A artifacts 2>/dev/null || true)" ]; then
+            echo "✅ Artifacts found:"
+            find artifacts -type d -name "*luci-app-zapret2*" 2>/dev/null | while read dir; do
+              echo "  📁 $(basename "$dir"):"
+              find "$dir" -name "*.ipk" -type f 2>/dev/null | while read ipk; do
+                echo "    • $(basename "$ipk") ($(du -h "$ipk" 2>/dev/null | cut -f1 2>/dev/null || echo "unknown size"))"
+              done
+            done
           else
-            echo "⚠️ Some builds failed"
-            exit 1
+            echo "📭 No artifacts found"
           fi
+          
+          echo ""
+          
+          # Final status
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "🎉 All builds completed successfully!"
+          elif [ "${{ needs.build.result }}" = "failure" ]; then
+            echo "❌ Some builds failed"
+            echo ""
+            echo "🔍 Troubleshooting tips:"
+            echo "  1. Check SDK download URLs"
+            echo "  2. Verify Makefile structure"
+            echo "  3. Check dependencies in package"
+            echo "  4. Review build logs for errors"
+          elif [ "${{ needs.build.result }}" = "cancelled" ]; then
+            echo "⏹️ Build was cancelled"
+          elif [ "${{ needs.build.result }}" = "skipped" ]; then
+            echo "⏭️ Build was skipped"
+          else
+            echo "❓ Unknown build status: ${{ needs.build.result }}"
+          fi
+          
+          # Don't exit with error even if builds failed - we want to see the summary
+          echo "Summary completed at: $(date)"
