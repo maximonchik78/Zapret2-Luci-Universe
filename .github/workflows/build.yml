@@ -2,99 +2,84 @@ name: Build LuCI Package
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      target_arch:
-        description: 'Архитектура'
-        required: true
-        default: 'x86_64'
-        type: choice
-        options: [x86_64, aarch64]
-
-env:
-  OPENWRT_VERSION: "23.05.3"
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: [x86_64, aarch64]
     
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache SDK
-        uses: actions/cache@v3
-        id: sdk-cache
-        with:
-          path: sdk-${{ matrix.target }}
-          key: sdk-${{ matrix.target }}-${{ env.OPENWRT_VERSION }}-v2
-
-      - name: Download SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
-        run: |
-          echo "Скачиваю SDK для ${{ matrix.target }}..."
-          
-          if [ "${{ matrix.target }}" = "x86_64" ]; then
-            URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/x86/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-          elif [ "${{ matrix.target }}" = "aarch64" ]; then
-            URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/armvirt/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-aarch64_generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-          fi
-          
-          wget -q --show-progress -O sdk.tar.xz "$URL"
-          mkdir -p sdk-${{ matrix.target }}
-          tar -xf sdk.tar.xz -C sdk-${{ matrix.target }} --strip-components=1
-          echo "SDK готов"
-
-      - name: Copy package files
-        run: |
-          SDK_DIR="sdk-${{ matrix.target }}"
-          
-          # СОЗДАЁМ ПАПКУ ПАКЕТА
-          mkdir -p "$SDK_DIR/package/luci-app-zapret2"
-          
-          # КОПИРУЕМ ТОЛЬКО НУЖНОЕ
-          [ -f "Makefile" ] && cp Makefile "$SDK_DIR/package/luci-app-zapret2/"
-          [ -d "files" ] && cp -r files "$SDK_DIR/package/luci-app-zapret2/"
-          
-          echo "Структура папки пакета:"
-          ls -la "$SDK_DIR/package/luci-app-zapret2/"
-
-      - name: Build package
-        run: |
-          SDK_DIR="sdk-${{ matrix.target }}"
-          cd "$SDK_DIR"
-          
-          echo "Сборка luci-app-zapret2..."
-          
-          # ОБНОВЛЕНИЕ И УСТАНОВКА FEEDS
-          ./scripts/feeds update -a
-          ./scripts/feeds install luci
-          
-          # КОНФИГУРАЦИЯ (defconfig САМ ВСЁ РЕШАЕТ)
-          make defconfig
-          
-          # ДОБАВЛЯЕМ НАШ ПАКЕТ В КОНФИГ
-          ./scripts/feeds install luci-app-zapret2
-          
-          # СОБИРАЕМ
-          make package/luci-app-zapret2/compile V=s 2>&1 | tee build.log
-          
-          # ПРОВЕРКА
-          if find bin -name "luci-app-zapret2*.ipk" 2>/dev/null | head -1; then
-            echo "✅ УСПЕХ"
-          else
-            echo "❌ ПРОВАЛ"
-            echo "Последние ошибки:"
-            tail -100 build.log | grep -i "error\|fail" | head -20
-            exit 1
-          fi
-
-      - name: Upload artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: luci-app-zapret2-${{ matrix.target }}
-          path: sdk-${{ matrix.target }}/bin/**/luci/luci-app-zapret2*.ipk
+    - uses: actions/checkout@v4
+    
+    - name: Download SDK (cached)
+      id: sdk
+      run: |
+        # Скачиваем один раз и кэшируем
+        if [ ! -f "sdk.tar.xz" ]; then
+          echo "📥 Downloading SDK..."
+          wget -q --show-progress -O sdk.tar.xz \
+            "https://downloads.openwrt.org/releases/23.05.3/targets/x86/64/openwrt-sdk-23.05.3-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+        fi
+        
+        mkdir -p sdk
+        tar -xf sdk.tar.xz -C sdk --strip-components=1
+        echo "✅ SDK ready"
+    
+    - name: Copy package
+      run: |
+        # Копируем ТОЛЬКО нужные файлы
+        mkdir -p sdk/package/luci-app-zapret2
+        
+        # Makefile ОБЯЗАТЕЛЕН
+        if [ ! -f "Makefile" ]; then
+          echo "❌ Makefile not found! Create it first!"
+          exit 1
+        fi
+        
+        cp Makefile sdk/package/luci-app-zapret2/
+        
+        # Копируем files если есть
+        if [ -d "files" ]; then
+          cp -r files sdk/package/luci-app-zapret2/
+        fi
+        
+        echo "📁 Package structure:"
+        ls -la sdk/package/luci-app-zapret2/
+    
+    - name: Build
+      run: |
+        cd sdk
+        
+        # 1. Обновляем feeds
+        ./scripts/feeds update -a
+        
+        # 2. Ставим luci
+        ./scripts/feeds install luci
+        
+        # 3. Конфигурируем (defconfig сам всё делает)
+        make defconfig
+        
+        # 4. Собираем ТОЛЬКО наш пакет
+        echo "🏗️ Building luci-app-zapret2..."
+        make package/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+        
+        # 5. Проверяем
+        if find bin -name "luci-app-zapret2*.ipk" 2>/dev/null | head -1; then
+          echo "✅ Build SUCCESS!"
+          echo "IPK file:"
+          find bin -name "*.ipk" -type f | xargs ls -la
+        else
+          echo "❌ Build FAILED"
+          echo "Last errors:"
+          tail -100 build.log | grep -i "error\|fail" | head -20
+          exit 1
+        fi
+    
+    - name: Upload artifact
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: luci-app-zapret2
+        path: sdk/bin/**/luci/luci-app-zapret2*.ipk
+        retention-days: 7
