@@ -56,9 +56,9 @@ jobs:
       run: |
         # Create a simple test package
         mkdir -p output
-        cat > output/test.info << EOF
+        cat > output/test.info << 'EOF'
 Package: luci-app-zapret2-test
-Version: 1.0.0-$(date +%s)
+Version: 1.0.0-test
 Description: Test package for GitHub Actions verification
 Architecture: all
 Status: ok
