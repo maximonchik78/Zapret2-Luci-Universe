@@ -22,55 +22,53 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # Определяем matrix в зависимости от типа события
-    strategy:
-      ${{ if eq(github.event_name, 'workflow_dispatch') }}:
-        matrix:
-          target: [${{ github.event.inputs.target_arch }}]
-      ${{ if ne(github.event_name, 'workflow_dispatch') }}:
-        matrix:
-          target: [x86_64]
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Determine target architecture
+        id: set-arch
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "TARGET_ARCH=${{ github.event.inputs.target_arch }}" >> $GITHUB_OUTPUT
+          else
+            echo "TARGET_ARCH=x86_64" >> $GITHUB_OUTPUT
+          fi
+          echo "Target architecture: $TARGET_ARCH"
+
       - name: Setup environment
         run: |
-          echo "🎯 Building for: ${{ matrix.target }}"
+          echo "🎯 Building for: ${{ steps.set-arch.outputs.TARGET_ARCH }}"
           echo "📦 OpenWrt version: ${{ env.OPENWRT_VERSION }}"
           
           # Определяем URL SDK в зависимости от архитектуры
-          case "${{ matrix.target }}" in
-            x86_64)
-              SDK_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/x86/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-              ;;
-            aarch64)
-              SDK_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/armvirt/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-aarch64_generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-              ;;
-            mipsel)
-              SDK_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/ramips/mt7621/openwrt-sdk-${{ env.OPENWRT_VERSION }}-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-              ;;
-            *)
-              echo "❌ Unsupported architecture: ${{ matrix.target }}"
-              exit 1
-              ;;
-          esac
+          TARGET="${{ steps.set-arch.outputs.TARGET_ARCH }}"
+          if [[ "$TARGET" == "x86_64" ]]; then
+            SDK_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/x86/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          elif [[ "$TARGET" == "aarch64" ]]; then
+            SDK_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/armvirt/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-aarch64_generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          elif [[ "$TARGET" == "mipsel" ]]; then
+            SDK_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/ramips/mt7621/openwrt-sdk-${{ env.OPENWRT_VERSION }}-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          else
+            echo "❌ Unsupported architecture: $TARGET"
+            exit 1
+          fi
           
           echo "📥 SDK URL: $SDK_URL"
           echo "SDK_URL=$SDK_URL" >> $GITHUB_ENV
+          echo "TARGET_ARCH=$TARGET" >> $GITHUB_ENV
 
       - name: Download and extract OpenWrt SDK
         run: |
           echo "📦 Downloading SDK..."
           
           # Создаем директорию для SDK
-          SDK_DIR="openwrt-sdk-${{ matrix.target }}"
+          SDK_DIR="openwrt-sdk"
           mkdir -p $SDK_DIR
           
           # Загружаем SDK
-          echo "Downloading from: ${{ env.SDK_URL }}"
-          wget -q --show-progress -O sdk.tar.xz "${{ env.SDK_URL }}"
+          echo "Downloading from: $SDK_URL"
+          wget -q --show-progress -O sdk.tar.xz "$SDK_URL"
           
           # Распаковываем
           echo "Extracting SDK..."
@@ -79,13 +77,9 @@ jobs:
           # Проверяем
           if [ -f "$SDK_DIR/Makefile" ]; then
             echo "✅ SDK extracted successfully"
-            echo "SDK directory contents:"
-            ls -la $SDK_DIR/
           else
             echo "❌ SDK extraction failed"
-            echo "Current directory: $(pwd)"
-            echo "SDK_DIR: $SDK_DIR"
-            ls -la
+            ls -la $SDK_DIR/
             exit 1
           fi
           
@@ -96,7 +90,7 @@ jobs:
           echo "📁 Preparing package..."
           
           # Создаем директорию пакета в SDK
-          PACKAGE_DIR="${{ env.SDK_DIR }}/package/luci-app-zapret2"
+          PACKAGE_DIR="$SDK_DIR/package/luci-app-zapret2"
           mkdir -p $PACKAGE_DIR
           
           # Копируем необходимые файлы
@@ -118,21 +112,13 @@ jobs:
             echo "⚠️  files directory not found"
           fi
           
-          # Копируем остальные файлы
-          for file in README.md LICENSE; do
-            if [ -f "$file" ]; then
-              cp "$file" $PACKAGE_DIR/ 2>/dev/null || true
-            fi
-          done
-          
           echo "✅ Package prepared"
-          echo "Package directory: $PACKAGE_DIR"
           ls -la $PACKAGE_DIR/
 
       - name: Build the package
         run: |
           echo "🔨 Building package..."
-          cd "${{ env.SDK_DIR }}"
+          cd "$SDK_DIR"
           
           # Обновляем feeds
           echo "📡 Updating feeds..."
@@ -154,26 +140,17 @@ jobs:
           
           # Проверяем результат
           echo "🔍 Checking build results..."
-          IPK_FILES=$(find bin -name "luci-app-zapret2*.ipk" 2>/dev/null || true)
-          
-          if [ -n "$IPK_FILES" ]; then
+          if find bin -name "luci-app-zapret2*.ipk" 2>/dev/null | grep -q .; then
             echo "✅ Build successful!"
             echo "📦 Generated packages:"
-            echo "$IPK_FILES" | while read ipk; do
+            find bin -name "luci-app-zapret2*.ipk" | while read ipk; do
               SIZE=$(du -h "$ipk" 2>/dev/null | cut -f1 || echo "unknown")
               echo "  - $ipk ($SIZE)"
             done
           else
             echo "❌ Build failed - no .ipk files generated"
-            echo "=== Searching for any build artifacts ==="
-            find bin -type f -name "*.ipk" 2>/dev/null || echo "No IPK files found"
-            
-            echo "=== Last 100 lines of build log ==="
-            tail -100 build.log
-            
-            echo "=== Looking for errors in build log ==="
-            grep -i "error\|failed\|undefined" build.log | head -50
-            
+            echo "=== Last 50 lines of build log ==="
+            tail -50 build.log
             exit 1
           fi
 
@@ -181,7 +158,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: luci-app-zapret2-${{ matrix.target }}
+          name: luci-app-zapret2-${{ env.TARGET_ARCH }}
           path: ${{ env.SDK_DIR }}/bin/**/luci-app-zapret2*.ipk
           retention-days: 7
 
@@ -189,7 +166,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ matrix.target }}
+          name: build-logs-${{ env.TARGET_ARCH }}
           path: ${{ env.SDK_DIR }}/build.log
           retention-days: 7
 
@@ -210,48 +187,28 @@ jobs:
           echo "Event: ${{ github.event_name }}"
           echo "Ref: ${{ github.ref }}"
           echo "Commit: ${{ github.sha }}"
-          echo "Workflow: ${{ github.workflow }}"
           echo ""
           
-          echo "📊 Job Results:"
-          echo "  • build: ${{ needs.build.result }}"
+          echo "Target architecture: ${{ env.TARGET_ARCH }}"
           echo ""
           
-          # Проверяем наличие артефактов
           if [ -d "artifacts" ]; then
-            IPK_COUNT=$(find artifacts -name "*.ipk" -type f 2>/dev/null | wc -l)
-            if [ $IPK_COUNT -gt 0 ]; then
-              echo "✅ Built $IPK_COUNT package(s):"
+            echo "Artifacts found:"
+            ls -la artifacts/
+            
+            if find artifacts -name "*.ipk" -type f 2>/dev/null | grep -q .; then
+              echo ""
+              echo "✅ Built packages:"
               find artifacts -name "*.ipk" -type f | while read ipk; do
-                SIZE=$(du -h "$ipk" 2>/dev/null | cut -f1 || echo "unknown")
-                ARCH=$(basename $(dirname $ipk) | sed 's/luci-app-zapret2-//')
-                echo "  - $ARCH: $(basename $ipk) ($SIZE)"
+                echo "  - $(basename $ipk)"
               done
             else
-              echo "📭 No packages found in artifacts"
-              echo "Available files in artifacts:"
-              find artifacts -type f | head -20
+              echo ""
+              echo "⚠️  No .ipk files found in artifacts"
             fi
           else
-            echo "📭 No artifacts directory found"
+            echo "⚠️  No artifacts directory"
           fi
           
           echo ""
-          
-          # Final status
-          if [ "${{ needs.build.result }}" = "success" ]; then
-            echo "🎉 Build completed successfully!"
-            echo ""
-            echo "📦 Packages are available in the 'Artifacts' section above."
-          else
-            echo "❌ Build failed"
-            echo ""
-            echo "🔧 Troubleshooting steps:"
-            echo "  1. Check build logs in artifacts"
-            echo "  2. Verify SDK URLs are correct"
-            echo "  3. Check Makefile structure"
-            echo "  4. Ensure all required files are in repository"
-          fi
-          
-          echo ""
-          echo "Summary completed at: $(date)"
+          echo "Build result: ${{ needs.build.result }}"
