@@ -1,18 +1,23 @@
+# Copyright (C) 2024-2026 Zapret2-Luci-Universe
+# This is free software, licensed under the GNU General Public License v3.
+# See /LICENSE for more information.
+
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-zapret2
 PKG_VERSION:=2.0.0
 PKG_RELEASE:=1
 
-PKG_MAINTAINER:=Maxim Onchik <maximonchik78@gmail.com>
-PKG_LICENSE:=GPL-3.0
-PKG_LICENSE_FILES:=LICENSE
+PKG_LICENSE:=GPL-3.0-only
+PKG_MAINTAINER:=maximonchik78 <markov7878max@gmail.com>
 
-LUCI_TITLE:=Zapret2 Web Interface with Block Check
-LUCI_DESCRIPTION:=Complete web interface for zapret2 blocking system with installation, configuration, block lists management, and block testing features.
+LUCI_TITLE:=LuCI Web Interface for Zapret2
+LUCI_DESCRIPTION:=User-friendly web interface for zapret2 with Block Check feature
 LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +curl +wget +tar +jq
 LUCI_PKGARCH:=all
+LUCI_PRIORITY:=optional
 
-include ../../luci.mk
+include $(TOPDIR)/feeds/luci/luci.mk
 
-# call BuildPackage - OpenWrt buildroot signature
+# Call BuildPackage - OpenWrt build magic
+$(eval $(call BuildPackage,$(PKG_NAME)))
