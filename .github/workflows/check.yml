@@ -1,0 +1,48 @@
+name: Code Quality Check
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Lua syntax check
+        run: |
+          echo "🔧 Checking Lua syntax..."
+          find . -name "*.lua" -type f | while read file; do
+            if luac -p "$file" 2>/dev/null; then
+              echo "✅ $file - syntax OK"
+            else
+              echo "❌ $file - syntax error"
+              luac -p "$file"
+            fi
+          done
+      
+      - name: Shell script check
+        run: |
+          echo "🔧 Checking shell scripts..."
+          find . -name "*.sh" -type f | while read file; do
+            if shellcheck "$file" 2>/dev/null; then
+              echo "✅ $file - shellcheck passed"
+            else
+              echo "⚠️ $file - shellcheck warnings"
+              shellcheck "$file" || true
+            fi
+          done
+      
+      - name: YAML syntax check
+        run: |
+          echo "🔧 Checking YAML files..."
+          find . -name "*.yml" -o -name "*.yaml" | while read file; do
+            if python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
+              echo "✅ $file - YAML syntax OK"
+            else
+              echo "❌ $file - YAML syntax error"
+            fi
+          done
