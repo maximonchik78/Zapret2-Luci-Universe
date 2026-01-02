@@ -1,0 +1,143 @@
+<%+header%>
+<script type="text/javascript">
+var installInProgress = true;
+var progressInterval;
+
+function updateProgress() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/cgi-bin/luci/admin/services/zapret2/log?lines=10&filter=install', true);
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(xhr.responseText, 'text/html');
+            var logContent = doc.querySelector('pre');
+            
+            if (logContent) {
+                document.getElementById('install-log').innerHTML = logContent.textContent;
+                document.getElementById('install-log').scrollTop = document.getElementById('install-log').scrollHeight;
+                
+                if (logContent.textContent.match(/Installation completed|successfully installed/i)) {
+                    document.getElementById('progress-bar').style.width = '100%';
+                    document.getElementById('progress-text').innerHTML = '100% Complete';
+                    document.getElementById('status-message').innerHTML = '<span class="label label-success">Installation Complete!</span>';
+                    document.getElementById('next-steps').style.display = 'block';
+                    clearInterval(progressInterval);
+                    installInProgress = false;
+                } else if (logContent.textContent.match(/error|failed/i)) {
+                    document.getElementById('status-message').innerHTML = '<span class="label label-danger">Installation Failed</span>';
+                    clearInterval(progressInterval);
+                    installInProgress = false;
+                }
+            }
+        }
+    };
+    
+    xhr.send();
+}
+
+function startInstallation() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '<%=url("admin/services/zapret2/install")%>', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText);
+            if (response.success) {
+                progressInterval = setInterval(updateProgress, 2000);
+                updateProgress();
+            }
+        }
+    };
+    
+    xhr.send('action=do_install&url=<%=download_url%>&version=<%=version%>&token=<%=token%>');
+}
+
+window.onload = function() {
+    startInstallation();
+    progressInterval = setInterval(updateProgress, 2000);
+};
+</script>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Installing Zapret2%></h2>
+    <div class="cbi-map-descr">
+        <%:Please wait while zapret2 is being installed. This may take several minutes.%>
+    </div>
+    
+    <div class="cbi-section">
+        <div class="cbi-section-node">
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Version%></label>
+                <div class="cbi-value-field">
+                    <code><%=version%></code>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Architecture%></label>
+                <div class="cbi-value-field">
+                    <code><%=arch%></code>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Status%></label>
+                <div class="cbi-value-field">
+                    <span id="status-message" class="label label-warning">Installing...</span>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Progress%></label>
+                <div class="cbi-value-field">
+                    <div class="progress" style="width: 300px;">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped active" 
+                             role="progressbar" style="width: 0%;">
+                            <span id="progress-text">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Installation Log%></label>
+                <div class="cbi-value-field">
+                    <pre id="install-log" style="background: #000; color: #0f0; padding: 10px; 
+                         min-height: 200px; max-height: 400px; overflow: auto; font-family: monospace;">
+Starting installation...
+                    </pre>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="next-steps" class="cbi-section" style="display: none;">
+        <h3><%:Next Steps%></h3>
+        <div class="cbi-section-descr">
+            <%:Installation completed successfully! Here's what to do next:%>
+        </div>
+        
+        <div class="cbi-section-node">
+            <div class="alert alert-success">
+                <i class="icon icon-check"></i>
+                <strong><%:Installation Complete!%></strong>
+            </div>
+            
+            <ol>
+                <li><%:Go to <a href="<%=url("admin/services/zapret2/config")%>">Configuration</a> to enable the service%></li>
+                <li><%:Visit <a href="<%=url("admin/services/zapret2/lists")%>">Block Lists</a> to manage blocking rules%></li>
+                <li><%:Use <a href="<%=url("admin/services/zapret2/blockcheck")%>">Block Check</a> to test blocking%></li>
+                <li><%:Check <a href="<%=url("admin/services/zapret2/status")%>">Status</a> page for system information%></li>
+            </ol>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="<%=url("admin/services/zapret2/status")%>" class="btn btn-success">
+                    <i class="icon icon-check"></i> <%:Go to Status Page%>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<%+footer%>
