@@ -25,7 +25,7 @@ jobs:
         echo "Время: $(date)" >> test-file.txt
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-artifact
         path: test-file.txt
