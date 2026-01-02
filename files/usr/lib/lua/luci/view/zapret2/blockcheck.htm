@@ -1,0 +1,275 @@
+<%+header%>
+<script type="text/javascript">
+function testBlocking(url, elementId) {
+    var button = document.getElementById('btn-' + elementId);
+    var status = document.getElementById('status-' + elementId);
+    
+    button.disabled = true;
+    button.innerHTML = '<i class="icon icon-refresh icon-spin"></i> Testing...';
+    status.innerHTML = '<span class="label label-warning">Testing...</span>';
+    
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '<%=url("admin/services/zapret2/blockcheck")%>', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText);
+            
+            if (response.blocked) {
+                status.innerHTML = '<span class="label label-danger">BLOCKED</span>';
+            } else {
+                status.innerHTML = '<span class="label label-success">ACCESSIBLE</span>';
+            }
+            
+            document.getElementById('result-' + elementId).innerHTML = 
+                'Status: ' + response.status + '<br>' +
+                'Response: ' + response.result;
+        } else {
+            status.innerHTML = '<span class="label label-default">ERROR</span>';
+        }
+        
+        button.disabled = false;
+        button.innerHTML = 'Test Again';
+    };
+    
+    xhr.send('action=test&url=' + encodeURIComponent(url) + '&token=<%=token%>');
+}
+
+function testAll() {
+    var sites = [
+        'http://rutracker.org',
+        'http://example.com', 
+        'http://google.com',
+        'http://youtube.com',
+        'http://facebook.com'
+    ];
+    
+    sites.forEach(function(site, index) {
+        setTimeout(function() {
+            var elementId = 'test' + (index + 1);
+            testBlocking(site, elementId);
+        }, index * 1000);
+    });
+}
+
+function customTest() {
+    var url = document.getElementById('custom-url').value;
+    if (!url) {
+        alert('Please enter a URL');
+        return;
+    }
+    
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'http://' + url;
+    }
+    
+    testBlocking(url, 'custom');
+}
+
+function batchTest() {
+    var urls = document.getElementById('batch-urls').value;
+    var timeout = document.getElementById('batch-timeout').value;
+    
+    if (!urls.trim()) {
+        alert('Please enter at least one URL');
+        return;
+    }
+    
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '<%=url("admin/services/zapret2/blockcheck")%>', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText);
+            displayBatchResults(response);
+        }
+    };
+    
+    xhr.send('action=multi_test&tests=' + encodeURIComponent(urls) + 
+             '&timeout=' + timeout + '&token=<%=token%>');
+}
+
+function displayBatchResults(data) {
+    var container = document.getElementById('batch-results-content');
+    var resultsDiv = document.getElementById('batch-results');
+    
+    var html = '<div class="table"><div class="tr table-titles">' +
+               '<div class="th">URL</div><div class="th">Status</div><div class="th">Result</div></div>';
+    
+    data.results.forEach(function(result) {
+        var statusClass = result.blocked ? 'label-danger' : 'label-success';
+        var statusText = result.blocked ? 'BLOCKED' : 'OK';
+        
+        html += '<div class="tr">' +
+                '<div class="td"><small>' + result.url + '</small></div>' +
+                '<div class="td"><span class="label ' + statusClass + '">' + statusText + '</span></div>' +
+                '<div class="td"><small>' + result.status_code + '</small></div>' +
+                '</div>';
+    });
+    
+    html += '</div>';
+    html += '<p><strong>Summary:</strong> ' + data.blocked + ' of ' + data.total + ' sites are blocked.</p>';
+    
+    container.innerHTML = html;
+    resultsDiv.style.display = 'block';
+}
+</script>
+
+<div class="cbi-map">
+    <h2 name="content"><%:Block Check - Blocking Test%></h2>
+    <div class="cbi-map-descr">
+        <%:Test if websites are being blocked by zapret2. This tool sends requests to test sites and reports their accessibility.%>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Quick Tests%></h3>
+        <div class="cbi-section-descr">
+            <%:Click "Test" buttons to check blocking status for common websites.%>
+        </div>
+        
+        <div class="table cbi-section-table">
+            <div class="tr table-titles">
+                <div class="th" style="width:40%"><%:Website%></div>
+                <div class="th" style="width:20%"><%:Status%></div>
+                <div class="th" style="width:20%"><%:Action%></div>
+                <div class="th" style="width:20%"><%:Result%></div>
+            </div>
+            
+            <% 
+            local sites = {
+                {name = "RuTracker", url = "http://rutracker.org", id = "test1"},
+                {name = "Example.com", url = "http://example.com", id = "test2"},
+                {name = "Google", url = "http://google.com", id = "test3"},
+                {name = "YouTube", url = "http://youtube.com", id = "test4"},
+                {name = "Facebook", url = "http://facebook.com", id = "test5"}
+            }
+            %>
+            
+            <% for i, site in ipairs(sites) do %>
+            <div class="tr cbi-rowstyle-<%=i%2+1%>">
+                <div class="td">
+                    <strong><%=site.name%></strong><br>
+                    <small><%=site.url%></small>
+                </div>
+                <div class="td">
+                    <span id="status-<%=site.id%>" class="label label-default">Not tested</span>
+                </div>
+                <div class="td">
+                    <button id="btn-<%=site.id%>" class="btn cbi-button" 
+                            onclick="testBlocking('<%=site.url%>', '<%=site.id%>')" 
+                            style="min-width: 100px;">
+                        Test
+                    </button>
+                </div>
+                <div class="td">
+                    <small id="result-<%=site.id%>" style="font-size: 11px;">-</small>
+                </div>
+            </div>
+            <% end %>
+        </div>
+        
+        <div style="text-align: center; margin: 20px 0;">
+            <button onclick="testAll()" class="btn btn-primary" style="min-width: 150px;">
+                <i class="icon icon-play"></i> Test All Sites
+            </button>
+        </div>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Custom Test%></h3>
+        <div class="cbi-section-descr">
+            <%:Enter any URL to test if it's blocked.%>
+        </div>
+        
+        <div class="cbi-section-node">
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:URL to Test%></label>
+                <div class="cbi-value-field">
+                    <div class="input-group">
+                        <input type="text" id="custom-url" class="cbi-input-text" 
+                               placeholder="http://example.com" style="width: 70%;">
+                        <span class="input-group-btn">
+                            <button onclick="customTest()" class="btn cbi-button" 
+                                    style="min-width: 100px; margin-left: 10px;">
+                                Test URL
+                            </button>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Status%></label>
+                <div class="cbi-value-field">
+                    <span id="status-custom" class="label label-default">Not tested</span>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Result%></label>
+                <div class="cbi-value-field">
+                    <small id="result-custom">-</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="cbi-section">
+        <h3><%:Batch Testing%></h3>
+        <div class="cbi-section-descr">
+            <%:Test multiple URLs at once. Enter one URL per line.%>
+        </div>
+        
+        <div class="cbi-section-node">
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:URL List%></label>
+                <div class="cbi-value-field">
+                    <textarea id="batch-urls" class="cbi-input-textarea" 
+                              rows="6" cols="80" placeholder="Enter URLs, one per line"></textarea>
+                </div>
+            </div>
+            
+            <div class="cbi-value">
+                <label class="cbi-value-title"><%:Timeout (seconds)%></label>
+                <div class="cbi-value-field">
+                    <input type="number" id="batch-timeout" class="cbi-input-text" 
+                           value="5" min="1" max="30" style="width: 80px;">
+                </div>
+            </div>
+            
+            <div class="cbi-value cbi-value-last">
+                <label class="cbi-value-title"></label>
+                <div class="cbi-value-field">
+                    <button onclick="batchTest()" class="btn btn-success" style="min-width: 150px;">
+                        <i class="icon icon-list"></i> Run Batch Test
+                    </button>
+                </div>
+            </div>
+            
+            <div id="batch-results" style="display: none; margin-top: 20px;">
+                <h4><%:Results%></h4>
+                <div id="batch-results-content"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.btn {
+    min-width: 100px !important;
+    text-align: center;
+}
+
+.cbi-button {
+    min-width: 100px !important;
+}
+
+.label {
+    min-width: 80px;
+    display: inline-block;
+    text-align: center;
+}
+</style>
+<%+footer%>
