@@ -1,0 +1,205 @@
+name: Build LuCI Package for OpenWrt
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: 'Target architecture (x86_64, aarch64, mipsel)'
+        required: true
+        default: 'x86_64'
+
+env:
+  OPENWRT_VERSION: "23.05.3"
+  CACHE_KEY: "openwrt-sdk-${{ github.event_name == 'push' && 'prod' || 'dev' }}"
+
+jobs:
+  setup-sdk:
+    runs-on: ubuntu-latest
+    outputs:
+      sdk_urls: ${{ steps.setup.outputs.sdk_urls }}
+    steps:
+      - name: Determine SDK URLs
+        id: setup
+        run: |
+          # Map architectures to SDK URLs
+          declare -A SDK_URLS=(
+            ["x86_64"]="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/x86/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+            ["aarch64"]="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/armvirt/64/openwrt-sdk-${{ env.OPENWRT_VERSION }}-aarch64_generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+            ["mipsel"]="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/ramips/mt7621/openwrt-sdk-${{ env.OPENWRT_VERSION }}-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          )
+          
+          # Get architectures to build
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ARCHS="${{ github.event.inputs.target_arch }}"
+          elif [[ "${{ github.event.ref }}" == refs/tags/* ]]; then
+            # Build all architectures for tags
+            ARCHS="x86_64 aarch64 mipsel"
+          else
+            # Build only x86_64 for regular pushes
+            ARCHS="x86_64"
+          fi
+          
+          # Prepare JSON output
+          JSON="{"
+          first=true
+          for arch in $ARCHS; do
+            if [[ ${SDK_URLS[$arch]} ]]; then
+              if [ "$first" = false ]; then
+                JSON="$JSON,"
+              fi
+              JSON="$JSON\"$arch\":\"${SDK_URLS[$arch]}\""
+              first=false
+            fi
+          done
+          JSON="$JSON}"
+          
+          echo "SDK_URLS=$JSON" >> $GITHUB_OUTPUT
+          echo "Architectures to build: $ARCHS"
+
+  build:
+    needs: setup-sdk
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: ${{ fromJson(needs.setup-sdk.outputs.sdk_urls) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache OpenWrt SDK
+        uses: actions/cache@v3
+        with:
+          path: sdk-${{ matrix.arch }}
+          key: ${{ env.CACHE_KEY }}-${{ matrix.arch }}-${{ hashFiles('Makefile', 'files/**', '.github/workflows/build.yml') }}
+
+      - name: Download and extract OpenWrt SDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Downloading SDK for ${{ matrix.arch }}..."
+          SDK_URL='${{ matrix.arch.value }}'
+          
+          # Download SDK
+          wget -q --show-progress -O sdk.tar.xz "$SDK_URL"
+          
+          # Extract
+          mkdir -p sdk-${{ matrix.arch.key }}
+          tar -xf sdk.tar.xz -C sdk-${{ matrix.arch.key }} --strip-components=1
+          
+          # Verify extraction
+          if [ -f "sdk-${{ matrix.arch.key }}/Makefile" ]; then
+            echo "✅ SDK extracted successfully"
+          else
+            echo "❌ SDK extraction failed"
+            ls -la sdk-${{ matrix.arch.key }}/
+            exit 1
+          fi
+
+      - name: Prepare package in SDK tree
+        run: |
+          SDK_DIR="sdk-${{ matrix.arch.key }}"
+          
+          # Copy entire package to SDK
+          mkdir -p "$SDK_DIR/package/luci-app-zapret2"
+          cp -r * "$SDK_DIR/package/luci-app-zapret2/"
+          
+          # Clean up any unwanted files
+          rm -f "$SDK_DIR/package/luci-app-zapret2/.github" 2>/dev/null || true
+          rm -rf "$SDK_DIR/package/luci-app-zapret2/.git" 2>/dev/null || true
+          
+          echo "Package prepared in SDK tree"
+          ls -la "$SDK_DIR/package/luci-app-zapret2/"
+
+      - name: Build the package
+        run: |
+          SDK_DIR="sdk-${{ matrix.arch.key }}"
+          cd "$SDK_DIR"
+          
+          # Update feeds and configure
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          
+          echo "Starting build for luci-app-zapret2..."
+          make defconfig
+          
+          # Build only our package with verbose output
+          make package/luci-app-zapret2/compile V=s 2>&1 | tee build.log
+          
+          # Check if build was successful
+          if ls bin/packages/*/luci/luci-app-zapret2*.ipk 1> /dev/null 2>&1; then
+            echo "✅ Build successful!"
+            
+            # Show package info
+            for ipk in bin/packages/*/luci/luci-app-zapret2*.ipk; do
+              echo "Generated package: $ipk"
+              echo "Size: $(du -h "$ipk" | cut -f1)"
+            done
+          else
+            echo "❌ Build failed - no .ipk files found"
+            
+            # Show last 50 lines of build log for debugging
+            echo "=== Last 50 lines of build log ==="
+            tail -50 build.log
+            
+            # Check for common issues
+            if grep -q "ERROR:" build.log; then
+              echo "=== Errors found ==="
+              grep -A5 -B5 "ERROR:" build.log
+            fi
+            
+            exit 1
+          fi
+
+      - name: Upload built packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-zapret2-${{ matrix.arch.key }}
+          path: |
+            sdk-${{ matrix.arch.key }}/bin/packages/*/luci/luci-app-zapret2*.ipk
+            sdk-${{ matrix.arch.key }}/build.log
+          retention-days: 30
+
+      - name: Create GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            sdk-${{ matrix.arch.key }}/bin/packages/*/luci/luci-app-zapret2*.ipk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+  summary:
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show build summary
+        run: |
+          echo "=== Build Summary ==="
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          echo "Built packages:"
+          find artifacts -name "*.ipk" -type f | while read ipk; do
+            echo "  - $(basename $(dirname $(dirname $ipk)))/$(basename $ipk)"
+            echo "    Size: $(du -h "$ipk" | cut -f1)"
+          done
+          
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "✅ All builds completed successfully!"
+          else
+            echo "⚠️ Some builds failed"
+            exit 1
+          fi
